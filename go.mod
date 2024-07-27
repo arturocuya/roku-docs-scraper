@@ -1,4 +1,4 @@
-module purplecoders/roku-docs-scraper
+module roku-docs-scraper
 
 go 1.22.3
 

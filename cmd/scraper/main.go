@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"roku-docs-scraper/utils"
 	"strings"
 	"sync"
 	"time"
@@ -98,8 +99,8 @@ func main() {
 	var exists = struct{}{}
 
 	for _, url := range pageURLs {
-		if IsRokuDocsURLValid(&url) {
-			urlSet[SanitizeRokuDocsURL(url)] = exists
+		if utils.IsRokuDocsURLValid(&url) {
+			urlSet[utils.SanitizeRokuDocsURL(url)] = exists
 		}
 	}
 
