@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -123,13 +124,6 @@ func main() {
 		}
 	}
 
-	outputFile, err := os.Create("output.txt")
-
-	if err != nil {
-		log.Fatalf("Failed to create file: %v", err)
-	}
-	defer outputFile.Close()
-
 	var links []string
 
 	for link := range linksSet {
@@ -147,24 +141,40 @@ func main() {
 	wg.Wait()
 }
 
-func scrapeRokuDocsLink(link string, ctx context.Context, wg *sync.WaitGroup) {
+func scrapeRokuDocsLink(link string, allocatorContext context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	fmt.Printf("Started: %s\n", link)
 
-	ctx, cancel := chromedp.NewContext(ctx)
+	ctx, cancel := chromedp.NewContext(allocatorContext)
 	defer cancel()
 
 	var html string
+	var containerClasses string
+
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(link),
-		chromedp.WaitVisible(".markdown-body > h1:nth-child(1)"),
-		chromedp.InnerHTML(".markdown-body", &html, chromedp.NodeVisible),
+		chromedp.WaitVisible(".markdown-body"),
+		chromedp.Sleep(1*time.Second),
+		chromedp.AttributeValue(".content > div:nth-child(2)", "class", &containerClasses, nil),
 	)
 
 	if err != nil {
 		log.Fatal("Failed to scrape:", link, err)
 		return
+	}
+
+	if strings.Contains(containerClasses, "doc-error") {
+		html = "Content container has .doc-error class. Scrapping aborted."
+	} else {
+		err := chromedp.Run(ctx,
+			chromedp.WaitVisible(".markdown-body > h1:nth-child(1)"),
+			chromedp.InnerHTML(".markdown-body", &html, chromedp.NodeVisible),
+		)
+		if err != nil {
+			log.Fatal("Failed to scrape:", link, err)
+			return
+		}
 	}
 
 	outputPath := fmt.Sprintf("./output/%s", strings.Split(link, "https://developer.roku.com/docs/")[1])
