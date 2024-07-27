@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -103,6 +104,7 @@ func main() {
 			}
 
 			mux.Lock()
+			// TODO: Is the TargetUrl.Url also included in pageLinks?
 			pageLinks = append(pageLinks, links...)
 			mux.Unlock()
 
@@ -128,10 +130,62 @@ func main() {
 	}
 	defer outputFile.Close()
 
+	var links []string
+
 	for link := range linksSet {
-		_, err := fmt.Fprintln(outputFile, link)
-		if err != nil {
-			log.Fatalf("Failed to write to file: %v", err)
+		links = append(links, link)
+	}
+
+	for i, link := range links {
+		wg.Add(1)
+		go scrapeRokuDocsLink(link, allocatorContext, &wg)
+
+		if i%10 == 0 {
+			wg.Wait()
 		}
 	}
+	wg.Wait()
+}
+
+func scrapeRokuDocsLink(link string, ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	fmt.Printf("Started: %s\n", link)
+
+	ctx, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+
+	var html string
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(link),
+		chromedp.WaitVisible(".markdown-body > h1:nth-child(1)"),
+		chromedp.InnerHTML(".markdown-body", &html, chromedp.NodeVisible),
+	)
+
+	if err != nil {
+		log.Fatal("Failed to scrape:", link, err)
+		return
+	}
+
+	outputPath := fmt.Sprintf("./output/%s", strings.Split(link, "https://developer.roku.com/docs/")[1])
+	outputPath = outputPath[:len(outputPath)-len(".md")] + ".html"
+
+	dir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		log.Fatalf("Failed to create directory: %s", err)
+	}
+
+	outputFile, err := os.Create(outputPath)
+
+	if err != nil {
+		log.Fatalf("Failed to create file %s: %v", outputPath, err)
+	}
+	defer outputFile.Close()
+
+	_, err = fmt.Fprintf(outputFile, "<!-- %s -->\n%s", link, html)
+	if err != nil {
+		log.Fatalf("Failed to write to file %s: %v", outputPath, err)
+	}
+
+	fmt.Printf("Finished: %s\n", link)
 }
