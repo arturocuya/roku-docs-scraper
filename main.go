@@ -129,11 +129,9 @@ func main() {
 	defer outputFile.Close()
 
 	for link := range linksSet {
-		if link != "" && strings.HasPrefix(link, "https://developer.roku.com") {
-			_, err := fmt.Fprintln(outputFile, link)
-			if err != nil {
-				log.Fatalf("Failed to write to file: %v", err)
-			}
+		_, err := fmt.Fprintln(outputFile, link)
+		if err != nil {
+			log.Fatalf("Failed to write to file: %v", err)
 		}
 	}
 }
