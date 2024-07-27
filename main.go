@@ -25,34 +25,6 @@ func NewTargetUrl(url, selectorToWaitVisible string) *TargetUrl {
 	}
 }
 
-func isRokuDocsLinkValid(link *string) bool {
-	if *link == "" {
-		return false
-	}
-	if !strings.HasPrefix(*link, "https://developer.roku.com/") {
-		return false
-	}
-	if !strings.Contains(*link, "/docs/") {
-		return false
-	}
-	return true
-}
-
-func sanitizeRokuDocsLink(link string) string {
-	splitLink := strings.Split(link, "/")
-	if splitLink[3] != "docs" {
-		link = strings.Join(append(splitLink[:3], splitLink[4:]...), "/")
-	}
-
-	anchorIndex := strings.Index(link, "#")
-
-	if anchorIndex != -1 {
-		link = link[:anchorIndex]
-	}
-
-	return link
-}
-
 func main() {
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), append(
 		chromedp.DefaultExecAllocatorOptions[:],
@@ -81,23 +53,23 @@ func main() {
 
 	var wg sync.WaitGroup
 	var mux sync.Mutex
-	var pageLinks []string
+	var pageUrls []string
 
 	for _, targetUrl := range targetUrls {
 		wg.Add(1)
 		go func(targetUrl TargetUrl) {
 			defer wg.Done()
 
-			fmt.Printf("Started: %s\n", targetUrl.Url)
+			fmt.Printf("Started scrapping main url: %s\n", targetUrl.Url)
 
 			ctx, cancel := chromedp.NewContext(allocatorContext)
 			defer cancel()
 
-			var links []string
+			var urls []string
 			err := chromedp.Run(ctx,
 				chromedp.Navigate(targetUrl.Url),
 				chromedp.WaitVisible(targetUrl.SelectorToWaitVisible),
-				chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &links),
+				chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &urls),
 			)
 			if err != nil {
 				fmt.Println("Failed to scrape:", targetUrl.Url, err)
@@ -105,34 +77,34 @@ func main() {
 			}
 
 			mux.Lock()
-			// TODO: Is the TargetUrl.Url also included in pageLinks?
-			pageLinks = append(pageLinks, links...)
+			// TODO: Is the TargetUrl.Url also included in pageUrls?
+			pageUrls = append(pageUrls, urls...)
 			mux.Unlock()
 
-			fmt.Printf("Finished: %s\n", targetUrl.Url)
+			fmt.Printf("Finished scrapping main url: %s\n", targetUrl.Url)
 		}(targetUrl)
 	}
 
 	wg.Wait()
 
-	linksSet := make(map[string]struct{})
+	urlSet := make(map[string]struct{})
 	var exists = struct{}{}
 
-	for _, link := range pageLinks {
-		if isRokuDocsLinkValid(&link) {
-			linksSet[sanitizeRokuDocsLink(link)] = exists
+	for _, url := range pageUrls {
+		if IsRokuDocsUrlValid(&url) {
+			urlSet[SanitizeRokuDocsUrl(url)] = exists
 		}
 	}
 
-	var links []string
+	var urls []string
 
-	for link := range linksSet {
-		links = append(links, link)
+	for uniqueUrl := range urlSet {
+		urls = append(urls, uniqueUrl)
 	}
 
-	for i, link := range links {
+	for i, url := range urls {
 		wg.Add(1)
-		go scrapeRokuDocsLink(link, allocatorContext, &wg)
+		go scrapeRokuDocsUrl(url, allocatorContext, &wg)
 
 		if i%10 == 0 {
 			wg.Wait()
@@ -141,10 +113,10 @@ func main() {
 	wg.Wait()
 }
 
-func scrapeRokuDocsLink(link string, allocatorContext context.Context, wg *sync.WaitGroup) {
+func scrapeRokuDocsUrl(url string, allocatorContext context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	fmt.Printf("Started: %s\n", link)
+	fmt.Printf("Started: %s\n", url)
 
 	ctx, cancel := chromedp.NewContext(allocatorContext)
 	defer cancel()
@@ -153,14 +125,14 @@ func scrapeRokuDocsLink(link string, allocatorContext context.Context, wg *sync.
 	var containerClasses string
 
 	err := chromedp.Run(ctx,
-		chromedp.Navigate(link),
+		chromedp.Navigate(url),
 		chromedp.WaitVisible(".markdown-body"),
 		chromedp.Sleep(1*time.Second),
 		chromedp.AttributeValue(".content > div:nth-child(2)", "class", &containerClasses, nil),
 	)
 
 	if err != nil {
-		log.Fatal("Failed to scrape:", link, err)
+		log.Fatal("Failed to scrape:", url, err)
 		return
 	}
 
@@ -172,12 +144,12 @@ func scrapeRokuDocsLink(link string, allocatorContext context.Context, wg *sync.
 			chromedp.InnerHTML(".markdown-body", &html, chromedp.NodeVisible),
 		)
 		if err != nil {
-			log.Fatal("Failed to scrape:", link, err)
+			log.Fatal("Failed to scrape:", url, err)
 			return
 		}
 	}
 
-	outputPath := fmt.Sprintf("./output/%s", strings.Split(link, "https://developer.roku.com/docs/")[1])
+	outputPath := fmt.Sprintf("./output/%s", strings.Split(url, "https://developer.roku.com/docs/")[1])
 	outputPath = outputPath[:len(outputPath)-len(".md")] + ".html"
 
 	dir := filepath.Dir(outputPath)
@@ -192,10 +164,10 @@ func scrapeRokuDocsLink(link string, allocatorContext context.Context, wg *sync.
 	}
 	defer outputFile.Close()
 
-	_, err = fmt.Fprintf(outputFile, "<!-- %s -->\n%s", link, html)
+	_, err = fmt.Fprintf(outputFile, "<!-- %s -->\n%s", url, html)
 	if err != nil {
 		log.Fatalf("Failed to write to file %s: %v", outputPath, err)
 	}
 
-	fmt.Printf("Finished: %s\n", link)
+	fmt.Printf("Finished: %s\n", url)
 }
