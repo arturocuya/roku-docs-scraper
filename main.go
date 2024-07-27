@@ -13,107 +13,114 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-type TargetUrl struct {
-	Url                   string
+const MaxChromiumInstances = 10
+
+type TargetURL struct {
+	URL                   string
 	SelectorToWaitVisible string
 }
 
-func NewTargetUrl(url, selectorToWaitVisible string) *TargetUrl {
-	return &TargetUrl{
-		Url:                   url,
+func NewTargetURL(url, selectorToWaitVisible string) *TargetURL {
+	return &TargetURL{
+		URL:                   url,
 		SelectorToWaitVisible: selectorToWaitVisible,
 	}
 }
 
 func main() {
+	// ASSUMPTION: The following URLs are the main sections of the Roku documentation,
+	// each with a different element that indicates when the page is ready to extract
+	// the links from it.
+	targetURLs := []TargetURL{
+		*NewTargetURL(
+			"https://developer.roku.com/docs/features/features-overview.md",
+			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > a:nth-child(1)",
+		),
+		*NewTargetURL(
+			"https://developer.roku.com/docs/specs/specs-overview.md",
+			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > a:nth-child(1)",
+		),
+		*NewTargetURL(
+			"https://developer.roku.com/docs/developer-program/getting-started/roku-dev-prog.md",
+			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > div:nth-child(2) > ul:nth-child(1) > li:nth-child(1)",
+		),
+		*NewTargetURL(
+			"https://developer.roku.com/docs/references/references-overview.md",
+			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > a:nth-child(1)",
+		),
+	}
+
 	allocatorContext, cancel := chromedp.NewExecAllocator(context.Background(), append(
 		chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", false),
 	)...)
 	defer cancel()
 
-	targetUrls := []TargetUrl{
-		*NewTargetUrl(
-			"https://developer.roku.com/docs/features/features-overview.md",
-			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > a:nth-child(1)",
-		),
-		*NewTargetUrl(
-			"https://developer.roku.com/docs/specs/specs-overview.md",
-			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > a:nth-child(1)",
-		),
-		*NewTargetUrl(
-			"https://developer.roku.com/docs/developer-program/getting-started/roku-dev-prog.md",
-			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > div:nth-child(2) > ul:nth-child(1) > li:nth-child(1)",
-		),
-		*NewTargetUrl(
-			"https://developer.roku.com/docs/references/references-overview.md",
-			"#document-nav-menu > nav:nth-child(1) > div:nth-child(2) > div:nth-child(1) > ul:nth-child(1) > li:nth-child(1) > a:nth-child(1)",
-		),
-	}
-
 	var wg sync.WaitGroup
 	var mux sync.Mutex
-	var pageUrls []string
+	var pageURLs []string
 
-	for _, targetUrl := range targetUrls {
+	for _, targetURL := range targetURLs {
 		wg.Add(1)
-		go func(targetUrl TargetUrl) {
+		go func(targetURL TargetURL) {
 			defer wg.Done()
 
-			fmt.Printf("Started scrapping main url: %s\n", targetUrl.Url)
+			fmt.Printf("Started scrapping main url: %s\n", targetURL.URL)
 
 			ctx, cancel := chromedp.NewContext(allocatorContext)
 			defer cancel()
 
-			var urls []string
+			var URLs []string
 			err := chromedp.Run(ctx,
-				chromedp.Navigate(targetUrl.Url),
-				chromedp.WaitVisible(targetUrl.SelectorToWaitVisible),
-				chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &urls),
+				chromedp.Navigate(targetURL.URL),
+				chromedp.WaitVisible(targetURL.SelectorToWaitVisible),
+				chromedp.Evaluate(
+					`Array.from(document.querySelectorAll('a')).map(a => a.href)`,
+					&URLs),
 			)
 			if err != nil {
-				fmt.Println("Failed to scrape:", targetUrl.Url, err)
+				fmt.Println("Failed to scrape main url:", targetURL.URL, err)
 				return
 			}
 
 			mux.Lock()
-			// TODO: Is the TargetUrl.Url also included in pageUrls?
-			pageUrls = append(pageUrls, urls...)
+			pageURLs = append(pageURLs, URLs...)
 			mux.Unlock()
 
-			fmt.Printf("Finished scrapping main url: %s\n", targetUrl.Url)
-		}(targetUrl)
+			fmt.Printf("Finished scrapping main url: %s\n", targetURL.URL)
+		}(targetURL)
 	}
 
 	wg.Wait()
 
+	// The keys of a map with empty values serves as a set
 	urlSet := make(map[string]struct{})
 	var exists = struct{}{}
 
-	for _, url := range pageUrls {
-		if IsRokuDocsUrlValid(&url) {
-			urlSet[SanitizeRokuDocsUrl(url)] = exists
+	for _, url := range pageURLs {
+		if IsRokuDocsURLValid(&url) {
+			urlSet[SanitizeRokuDocsURL(url)] = exists
 		}
 	}
 
-	var urls []string
+	var finalURLs []string
 
-	for uniqueUrl := range urlSet {
-		urls = append(urls, uniqueUrl)
+	for uniqueURL := range urlSet {
+		finalURLs = append(finalURLs, uniqueURL)
 	}
 
-	for i, url := range urls {
+	for i, url := range finalURLs {
 		wg.Add(1)
-		go scrapeRokuDocsUrl(url, allocatorContext, &wg)
+		go scrapeRokuDocsURL(url, allocatorContext, &wg)
 
-		if i%10 == 0 {
+		if i%MaxChromiumInstances == 0 {
 			wg.Wait()
 		}
 	}
 	wg.Wait()
 }
 
-func scrapeRokuDocsUrl(url string, allocatorContext context.Context, wg *sync.WaitGroup) {
+func scrapeRokuDocsURL(url string, allocatorContext context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	fmt.Printf("Started: %s\n", url)
