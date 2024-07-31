@@ -1,3 +1,8 @@
+Offline docs FTW!
+
+![image](https://github.com/user-attachments/assets/a00496d4-9cad-438a-b4d6-ca6698dd4a8d)
+
+
 Usage:
 
 - `go run cmd/scraper/main.go` to scrape the docs into `./output/raw`
