@@ -1,6 +1,12 @@
 package utils
 
-import "strings"
+import (
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 func IsRokuDocsURLValid(url *string) bool {
 	if *url == "" {
@@ -37,4 +43,23 @@ func SanitizeRokuDocsURL(url string) string {
 	}
 
 	return url
+}
+
+func WriteNewFile(filePath string, fileContent string) {
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		log.Fatalf("Failed to create directory: %s", err)
+	}
+
+	file, err := os.Create(filePath)
+
+	if err != nil {
+		log.Fatalf("Failed to create file %s: %v", filePath, err)
+	}
+	defer file.Close()
+
+	_, err = fmt.Fprint(file, fileContent)
+	if err != nil {
+		log.Fatalf("Failed to write to file %s: %v", filePath, err)
+	}
 }

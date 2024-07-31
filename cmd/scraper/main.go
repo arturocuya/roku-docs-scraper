@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"roku-docs-scraper/utils"
 	"strings"
 	"sync"
@@ -157,25 +155,11 @@ func scrapeRokuDocsURL(url string, allocatorContext context.Context, wg *sync.Wa
 		}
 	}
 
-	outputPath := fmt.Sprintf("./output/%s", strings.Split(url, "https://developer.roku.com/docs/")[1])
-	outputPath = outputPath[:len(outputPath)-len(".md")] + ".html"
+	outputPath := fmt.Sprintf(
+		"./output/raw/%s",
+		strings.Split(url, "https://developer.roku.com/docs/")[1])
 
-	dir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		log.Fatalf("Failed to create directory: %s", err)
-	}
-
-	outputFile, err := os.Create(outputPath)
-
-	if err != nil {
-		log.Fatalf("Failed to create file %s: %v", outputPath, err)
-	}
-	defer outputFile.Close()
-
-	_, err = fmt.Fprintf(outputFile, "<!-- %s -->\n%s", url, html)
-	if err != nil {
-		log.Fatalf("Failed to write to file %s: %v", outputPath, err)
-	}
+	utils.WriteNewFile(outputPath, fmt.Sprintf("<!-- %s -->\n%s", url, html))
 
 	fmt.Printf("Finished: %s\n", url)
 }
